@@ -205,7 +205,9 @@ function isRetryableOpenAIResponsesStreamFailure(error: unknown): boolean {
 }
 
 const OPENAI_RESPONSES_RESUME_POLL_INTERVAL_MS = 5_000;
-/** 24 polls × 5s ≈ 2 minutes: covers a long high-effort turn finishing server-side. */
+/** Wall-clock budget for the whole recovery: a long high-effort turn finishing server-side. */
+const OPENAI_RESPONSES_RESUME_DEADLINE_MS = 120_000;
+/** Backstop on request count, independent of the clock. */
 const OPENAI_RESPONSES_RESUME_MAX_POLLS = 24;
 const OPENAI_RESPONSES_RESUME_POLL_ATTEMPT_TIMEOUT_MS = 30_000;
 
@@ -220,9 +222,11 @@ interface OpenAIResponsesPolledResult {
  * Poll a stored Responses result until it reaches an adoptable terminal state.
  * 404s, 5xx, and transport failures mean "not yet" (an in-flight run only
  * becomes retrievable once the server finishes it); any other status, a
- * mismatched id, or a failed/cancelled run ends the poll immediately. Bounded
- * by attempt count, not wall clock, so the budget holds however slow each
- * request is. Returns the terminal object, or undefined on give-up/abort.
+ * mismatched id, or a failed/cancelled run ends the poll immediately. The
+ * whole recovery is bounded by one wall-clock deadline: each request's timeout
+ * is clamped to the time left, and no sleep may cross the deadline, so a
+ * stalled host cannot hold an already-failed turn past it. Returns the
+ * terminal object, or undefined on give-up/abort.
  *
  * @internal Exported for tests.
  */
@@ -235,9 +239,11 @@ export async function pollOpenAIResponsesResultForCompletion(args: {
 	/** Sleep between polls; defaults to a real wait honoring `signal`. */
 	wait?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }): Promise<Record<string, unknown> | undefined> {
+	const deadline = Date.now() + OPENAI_RESPONSES_RESUME_DEADLINE_MS;
 	for (let attempt = 0; attempt < OPENAI_RESPONSES_RESUME_MAX_POLLS; attempt++) {
 		if (args.signal?.aborted) return undefined;
 		if (attempt > 0) {
+			if (Date.now() + OPENAI_RESPONSES_RESUME_POLL_INTERVAL_MS >= deadline) return undefined;
 			try {
 				if (args.wait) await args.wait(OPENAI_RESPONSES_RESUME_POLL_INTERVAL_MS, args.signal);
 				else await scheduler.wait(OPENAI_RESPONSES_RESUME_POLL_INTERVAL_MS, { signal: args.signal });
@@ -246,14 +252,17 @@ export async function pollOpenAIResponsesResultForCompletion(args: {
 			}
 			if (args.signal?.aborted) return undefined;
 		}
+		const remainingMs = deadline - Date.now();
+		if (remainingMs <= 0) return undefined;
+		const attemptTimeout = AbortSignal.timeout(
+			Math.min(OPENAI_RESPONSES_RESUME_POLL_ATTEMPT_TIMEOUT_MS, remainingMs),
+		);
 		let status: number | undefined;
 		let body: OpenAIResponsesPolledResult | undefined;
 		try {
 			const response = await args.fetchImpl(args.url, {
 				headers: args.headers,
-				signal: args.signal
-					? AbortSignal.any([args.signal, AbortSignal.timeout(OPENAI_RESPONSES_RESUME_POLL_ATTEMPT_TIMEOUT_MS)])
-					: AbortSignal.timeout(OPENAI_RESPONSES_RESUME_POLL_ATTEMPT_TIMEOUT_MS),
+				signal: args.signal ? AbortSignal.any([args.signal, attemptTimeout]) : attemptTimeout,
 			});
 			status = response.status;
 			if (status === 200) {
@@ -288,8 +297,10 @@ export async function pollOpenAIResponsesResultForCompletion(args: {
  * Whether a failed attempt may resume the server-side run instead of replaying
  * the turn: the failure is a mid-stream socket close (or premature close), the
  * request stored its result, a response id was captured, and the dead partial
- * executed nothing adoptable-twice (no tool/image/server-tool blocks) while
- * showing sunk server compute (some thinking or text streamed).
+ * streamed only reasoning. Visible text is excluded: delta-only consumers (ACP)
+ * already rendered it and cannot retract it, so an adopted answer that differs
+ * would leave the client showing stale text. Tool/image/server-tool blocks are
+ * excluded because they may already have side effects.
  */
 function canResumeOpenAIResponsesResultAfterDrop(args: {
 	responseId: string | undefined;
@@ -298,19 +309,16 @@ function canResumeOpenAIResponsesResultAfterDrop(args: {
 	failure: unknown;
 }): boolean {
 	if (!args.responseId || !args.storeEnabled) return false;
-	let hasProgress = false;
+	let hasThinking = false;
 	for (const block of args.partialContent) {
-		if (block.type === "toolCall" || block.type === "image" || block.type === "anthropicServerTool") {
-			return false;
+		if (block.type === "thinking") {
+			if (block.thinking.trim().length > 0) hasThinking = true;
+			continue;
 		}
-		if (
-			(block.type === "thinking" && block.thinking.trim().length > 0) ||
-			(block.type === "text" && block.text.trim().length > 0)
-		) {
-			hasProgress = true;
-		}
+		if (block.type === "text" && block.text.trim().length === 0) continue;
+		return false;
 	}
-	if (!hasProgress) return false;
+	if (!hasThinking) return false;
 	const message = args.failure instanceof Error ? args.failure.message : String(args.failure ?? "");
 	const prematureClose =
 		args.failure instanceof AIError.ProviderResponseError && args.failure.kind === "incomplete-stream";
@@ -318,11 +326,15 @@ function canResumeOpenAIResponsesResultAfterDrop(args: {
 }
 
 /**
- * Replays a polled terminal response through the normal item pipeline as if
- * its events had streamed: one added/done pair per output item, then the
- * terminal event. Lets a resumed run reuse `processResponsesStream` unchanged.
- * The double assertion is load-bearing: the polled body is untyped wire JSON
- * whose items only become typed when the pipeline validates them per item.
+ * Replays a polled terminal response through the normal item pipeline the way
+ * a live stream would deliver it, so delta-only consumers render the adopted
+ * answer: each item is announced (messages with empty content), message text
+ * arrives as `output_text`/`refusal` deltas, then the item completes and the
+ * terminal event closes the run. Reasoning is not re-streamed as deltas (the
+ * dead partial's reasoning already reached the client); it lands in the final
+ * message through `output_item.done`. The double assertion is load-bearing:
+ * the polled body is untyped wire JSON whose items only become typed when the
+ * pipeline validates them per item.
  */
 async function* resumeOpenAIResponsesEventStream(
 	response: Record<string, unknown>,
@@ -330,16 +342,44 @@ async function* resumeOpenAIResponsesEventStream(
 	const items: unknown[] = Array.isArray(response.output) ? response.output : [];
 	let sequenceNumber = 0;
 	for (let index = 0; index < items.length; index++) {
+		const item = items[index];
+		const isRecord = item !== null && typeof item === "object";
+		const isMessage = isRecord && "type" in item && item.type === "message";
+		const parts: unknown[] = isMessage && "content" in item && Array.isArray(item.content) ? item.content : [];
+		const itemId = isRecord && "id" in item ? item.id : undefined;
 		yield {
 			type: "response.output_item.added",
 			output_index: index,
-			item: items[index],
+			item: isMessage ? { ...item, content: [] } : item,
 			sequence_number: sequenceNumber++,
 		} as unknown as ResponseStreamEvent;
+		for (let partIndex = 0; partIndex < parts.length; partIndex++) {
+			const part = parts[partIndex];
+			if (part === null || typeof part !== "object" || !("type" in part)) continue;
+			if (part.type === "output_text" && "text" in part && typeof part.text === "string") {
+				yield {
+					type: "response.output_text.delta",
+					output_index: index,
+					item_id: itemId,
+					content_index: partIndex,
+					delta: part.text,
+					sequence_number: sequenceNumber++,
+				} as unknown as ResponseStreamEvent;
+			} else if (part.type === "refusal" && "refusal" in part && typeof part.refusal === "string") {
+				yield {
+					type: "response.refusal.delta",
+					output_index: index,
+					item_id: itemId,
+					content_index: partIndex,
+					delta: part.refusal,
+					sequence_number: sequenceNumber++,
+				} as unknown as ResponseStreamEvent;
+			}
+		}
 		yield {
 			type: "response.output_item.done",
 			output_index: index,
-			item: items[index],
+			item,
 			sequence_number: sequenceNumber++,
 		} as unknown as ResponseStreamEvent;
 	}
