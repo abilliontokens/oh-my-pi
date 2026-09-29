@@ -36,7 +36,7 @@
 - Added `supportsBetweenToolsThinking` Anthropic compat flag (`supports-between-tools-thinking` KDL axis), enabled for Claude Sonnet 5.5
 ### Changed
 
-- Muse Code now stores Responses results on Meta's side (`store-responses`), so a turn whose connection drops can be recovered instead of re-run.
+- Muse Code now stores Responses results on Meta's side (`store-responses`), so a turn whose connection drops can be recovered instead of re-run ([#13748](https://github.com/can1357/oh-my-pi/pull/13748) by [@abilliontokens](https://github.com/abilliontokens))
 
 ## [18.4.3] - 2026-09-28
 
