@@ -26,6 +26,7 @@ const NEW_COMPAT_FIELDS = new Set([
 	"zaiReasoningEffortDialect",
 	"clampOutputToModelMax",
 	"supportsAllTurnsReasoningContext",
+	"storeResponses",
 	"supportsFunctionPartId",
 	"requiresSkipThoughtSignature",
 	"dropUnsignedThinking",

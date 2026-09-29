@@ -34,6 +34,9 @@
 - Fixed Claude models on Bedrock's `/anthropic` routes resolving `compat.disableStrictTools: false`, although those routes reject the tool `strict` field ([#13311](https://github.com/can1357/oh-my-pi/pull/13311) by [@mustafaabidali](https://github.com/mustafaabidali)).
 - Fixed Bedrock's FIPS (`bedrock-runtime-fips`) and AWS PrivateLink (`vpce-….vpce.amazonaws.com`) hostnames, and Mantle's documented `/v1` OpenAI base, not being recognized as Bedrock routes, which left them without native compaction and the `/anthropic` request fixes ([#13311](https://github.com/can1357/oh-my-pi/pull/13311) by [@mustafaabidali](https://github.com/mustafaabidali)).
 - Added `supportsBetweenToolsThinking` Anthropic compat flag (`supports-between-tools-thinking` KDL axis), enabled for Claude Sonnet 5.5
+### Changed
+
+- Muse Code now stores Responses results on Meta's side (`store-responses`), so a turn whose connection drops can be recovered instead of re-run.
 
 ## [18.4.3] - 2026-09-28
 
