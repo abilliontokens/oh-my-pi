@@ -17,6 +17,7 @@
 - Cursor fast lanes whose bundled rate card lists only the base rate now bill at Cursor's declared fast multiplier instead of the base rate ([#11613](https://github.com/can1357/oh-my-pi/pull/11613) by [@will-bogusz](https://github.com/will-bogusz)).
 - Cursor's `default` (Auto) router is marked as variably priced instead of free ([#11613](https://github.com/can1357/oh-my-pi/pull/11613) by [@will-bogusz](https://github.com/will-bogusz)).
 - Switching Cursor accounts no longer shows the previous account's cached model list ([#11613](https://github.com/can1357/oh-my-pi/pull/11613) by [@will-bogusz](https://github.com/will-bogusz)).
+- Muse Code now stores Responses results on Meta's side (`store-responses`), so a turn whose connection drops can be recovered instead of re-run ([#13748](https://github.com/can1357/oh-my-pi/pull/13748) by [@abilliontokens](https://github.com/abilliontokens))
 
 ## [18.4.4] - 2026-09-29
 
@@ -34,9 +35,6 @@
 - Fixed Claude models on Bedrock's `/anthropic` routes resolving `compat.disableStrictTools: false`, although those routes reject the tool `strict` field ([#13311](https://github.com/can1357/oh-my-pi/pull/13311) by [@mustafaabidali](https://github.com/mustafaabidali)).
 - Fixed Bedrock's FIPS (`bedrock-runtime-fips`) and AWS PrivateLink (`vpce-….vpce.amazonaws.com`) hostnames, and Mantle's documented `/v1` OpenAI base, not being recognized as Bedrock routes, which left them without native compaction and the `/anthropic` request fixes ([#13311](https://github.com/can1357/oh-my-pi/pull/13311) by [@mustafaabidali](https://github.com/mustafaabidali)).
 - Added `supportsBetweenToolsThinking` Anthropic compat flag (`supports-between-tools-thinking` KDL axis), enabled for Claude Sonnet 5.5
-### Changed
-
-- Muse Code now stores Responses results on Meta's side (`store-responses`), so a turn whose connection drops can be recovered instead of re-run ([#13748](https://github.com/can1357/oh-my-pi/pull/13748) by [@abilliontokens](https://github.com/abilliontokens))
 
 ## [18.4.3] - 2026-09-28
 

@@ -15,6 +15,9 @@
 - Runtime usage providers (`usage.setProvider`, extension `registerProvider({ usage })`) now key cached reports by their own `cacheVersion`, so reports written by processes without the override are no longer served to it ([#13814](https://github.com/can1357/oh-my-pi/issues/13814)).
 - xAI OAuth accounts with active weekly credits no longer switch away solely because an uncertain monthly counter exceeds its limit ([#13806](https://github.com/can1357/oh-my-pi/issues/13806)).
 - Cursor retries after a rejected conversation now keep the tool calls and results already completed in the turn, instead of re-sending the last message and redoing that work ([#11613](https://github.com/can1357/oh-my-pi/pull/11613) by [@will-bogusz](https://github.com/will-bogusz)).
+### Fixed
+
+- An OpenAI Responses turn whose connection drops mid-stream now recovers the finished answer from the provider (on hosts that store results, such as Muse Code) instead of re-running the whole turn and discarding the reasoning already done ([#13748](https://github.com/can1357/oh-my-pi/pull/13748) by [@abilliontokens](https://github.com/abilliontokens))
 
 ## [18.4.4] - 2026-09-29
 
@@ -34,9 +37,6 @@
 - Cursor turns routed through an HTTP proxy now finish instead of hanging after the response completes ([#13724](https://github.com/can1357/oh-my-pi/pull/13724) by [@will-bogusz](https://github.com/will-bogusz)).
 - Fixed Codex requests sending `priority` (and `scale`) to models whose discovered service tiers list other tiers but not that one, matching the Codex CLI; an empty or missing list is treated as not reported, so `priority` is still sent and `/fast` keeps working on accounts whose `/models` lists no tiers (`flex` is always allowed) ([#13782](https://github.com/can1357/oh-my-pi/pull/13782) by [@H4vC](https://github.com/H4vC)).
 - Fixed Codex priority cost: a turn the backend reports as served at `default` is no longer billed at the priority multiplier ([#13782](https://github.com/can1357/oh-my-pi/pull/13782) by [@H4vC](https://github.com/H4vC)).
-### Fixed
-
-- An OpenAI Responses turn whose connection drops mid-stream now recovers the finished answer from the provider (on hosts that store results, such as Muse Code) instead of re-running the whole turn and discarding the reasoning already done ([#13748](https://github.com/can1357/oh-my-pi/pull/13748) by [@abilliontokens](https://github.com/abilliontokens))
 
 ## [18.4.3] - 2026-09-28
 

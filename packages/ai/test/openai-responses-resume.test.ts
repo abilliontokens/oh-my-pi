@@ -26,7 +26,11 @@ function sseFrame(payload: { type: string }): string {
  * read like a socket dropped mid-body. Pull-driven, so the drop is ordered by
  * the consumer, not a timer.
  */
-function dyingSseBody(responseId: string, committedText?: string): ReadableStream<Uint8Array> {
+function dyingSseBody(
+	responseId: string,
+	committedText?: string,
+	completedReasoning = false,
+): ReadableStream<Uint8Array> {
 	const encoder = new TextEncoder();
 	const frames: Array<{ type: string }> = [
 		{
@@ -48,6 +52,16 @@ function dyingSseBody(responseId: string, committedText?: string): ReadableStrea
 			delta: "partial plan",
 		} as { type: string },
 	];
+	if (completedReasoning) {
+		// The reasoning item finished before the drop, so its native item was
+		// already recorded for chaining.
+		frames.push({
+			type: "response.output_item.done",
+			output_index: 0,
+			sequence_number: 3,
+			item: { id: "rs_1", type: "reasoning", summary: [{ type: "summary_text", text: "partial plan" }] },
+		} as { type: string });
+	}
 	if (committedText !== undefined) {
 		frames.push(
 			{
@@ -109,7 +123,7 @@ interface DropScenario {
 function dropScenario(
 	responseId: string,
 	pollResponses: Array<() => Response>,
-	options: { committedText?: string } = {},
+	options: { committedText?: string; completedReasoning?: boolean } = {},
 ): DropScenario {
 	const posts: string[] = [];
 	const gets: string[] = [];
@@ -119,7 +133,7 @@ function dropScenario(
 		if (target.endsWith("/responses")) {
 			posts.push(target);
 			postBodies.push(JSON.parse(String(init?.body ?? "{}")));
-			return new Response(dyingSseBody(responseId, options.committedText), {
+			return new Response(dyingSseBody(responseId, options.committedText, options.completedReasoning), {
 				status: 200,
 				headers: { "content-type": "text/event-stream" },
 			});
@@ -245,6 +259,49 @@ describe("openai-responses socket-drop resume", () => {
 		}).result();
 
 		expect(scenario.postBodies[0]).toMatchObject({ store: false });
+		expect(result.stopReason).toBe("error");
+		expect(scenario.gets).toEqual([]);
+	});
+
+	it("records each adopted output item once when reasoning finished before the drop", async () => {
+		// The replay re-emits every output item. A reasoning item that already hit
+		// `output_item.done` before the drop must not be recorded twice: the history
+		// payload feeds `previous_response_id` chaining, and a duplicate item id is
+		// rejected by the Responses API on the next turn.
+		const scenario = dropScenario(
+			"resp_resume6",
+			[() => new Response(JSON.stringify(completedResult("resp_resume6")), { status: 200 })],
+			{ completedReasoning: true },
+		);
+		const result = await streamOpenAIResponses(bundledModel("muse-code"), context, {
+			fetch: scenario.fetchImpl,
+			apiKey: "test-key",
+			providerRetryWait: noWait,
+		}).result();
+
+		expect(result.stopReason).toBe("stop");
+		const payload = result.providerPayload;
+		if (payload?.type !== "openaiResponsesHistory") throw new Error("Expected a Responses history payload");
+		expect(payload.items.map(item => item.id)).toEqual(["rs_1", "msg_1"]);
+	});
+
+	it("never polls when only stateful chaining forces store on a non-storing host", async () => {
+		// Official OpenAI turns chained through `previous_response_id` send
+		// `store: true`, but that host is not known to finish a dropped run
+		// server-side. Resume follows the host contract, not the wire flag, so the
+		// drop fails fast as before instead of parking the turn on polls.
+		const scenario = dropScenario("resp_resume7", [
+			() => new Response(JSON.stringify(completedResult("resp_resume7")), { status: 200 }),
+		]);
+		const result = await streamOpenAIResponses(bundledModel("openai"), context, {
+			fetch: scenario.fetchImpl,
+			apiKey: "test-key",
+			providerRetryWait: noWait,
+			sessionId: "stateful-session",
+			providerSessionState: new Map(),
+		}).result();
+
+		expect(scenario.postBodies[0]).toMatchObject({ store: true });
 		expect(result.stopReason).toBe("error");
 		expect(scenario.gets).toEqual([]);
 	});

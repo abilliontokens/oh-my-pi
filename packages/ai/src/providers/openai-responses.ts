@@ -1047,7 +1047,11 @@ const streamOpenAIResponsesOnce = (
 						resumeId !== undefined &&
 						canResumeOpenAIResponsesResultAfterDrop({
 							responseId: resumeId,
-							storeEnabled: activeParams.store !== false,
+							// Gate on the host contract, not the wire flag: stateful chaining
+							// forces `store: true` on official OpenAI too, where a dropped run
+							// is not known to finish server-side and polling would only park
+							// a turn that used to fail fast.
+							storeEnabled: model.compat.storeResponses === true,
 							partialContent: output.content,
 							failure: streamFailure,
 						})
@@ -1073,11 +1077,15 @@ const streamOpenAIResponsesOnce = (
 							const deadUpstreamModel = output.upstreamModel;
 							const deadUpstreamProvider = output.upstreamProvider;
 							const deadStopDetails = output.stopDetails;
-							const deadNativeLength = nativeOutputItems.length;
+							// The replay re-emits every output item, including any reasoning
+							// item that already hit `output_item.done` before the drop; keep a
+							// copy and start empty so no id is recorded twice for chaining.
+							const deadNativeItems = [...nativeOutputItems];
 							const deadQueueLength = attemptStream.queue.length;
 							let resumedSawTerminal = false;
 							try {
 								output.content.length = 0;
+								nativeOutputItems.length = 0;
 								output.stopReason = "stop";
 								output.stopDetails = undefined;
 								await processResponsesStream(
@@ -1133,7 +1141,8 @@ const streamOpenAIResponsesOnce = (
 								output.upstreamModel = deadUpstreamModel;
 								output.upstreamProvider = deadUpstreamProvider;
 								output.stopDetails = deadStopDetails;
-								nativeOutputItems.length = deadNativeLength;
+								nativeOutputItems.length = 0;
+								nativeOutputItems.push(...deadNativeItems);
 								attemptStream.queue.length = deadQueueLength;
 								if (abortTracker.wasCallerAbort()) throw new AIError.AbortError();
 								const adoptLocalAbort = abortTracker.getLocalAbortReason();
