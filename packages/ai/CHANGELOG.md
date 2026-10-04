@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Reduced per-turn request overhead for sessions with large tool catalogs by reusing converted tool definitions across turns.
+
 ## [18.6.0] - 2026-10-03
 
 ### Fixed

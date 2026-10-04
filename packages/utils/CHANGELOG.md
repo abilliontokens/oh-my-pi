@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Reduced CPU spent on SSE framing and event dispatch while streaming long reasoning and tool-call turns.
+
 ## [18.5.1] - 2026-10-03
 
 ### Added
