@@ -380,7 +380,13 @@ import { cfgStreamRedactPatterns } from "../stream/settings";
 import { cfgSttEnabled } from "../stt/settings";
 import { combine, type SettingValueOf } from "../config/registry";
 import { cfgAdvisorEnabled, cfgAdvisorMaxNotesPerUpdate } from "../advisor/settings";
-import { cfgTierAdvisor } from "../session/settings";
+import {
+	cfgResourceWatchdogEnabled,
+	cfgResourceWatchdogIdleCpuPercent,
+	cfgResourceWatchdogMemoryMb,
+	cfgTierAdvisor,
+} from "../session/settings";
+import { ResourceWatchdog } from "./resource-watchdog";
 import {
 	cfgCompactionEnabled,
 	cfgCompactionIdleEnabled,
@@ -1552,6 +1558,8 @@ export class InteractiveMode implements InteractiveModeContext {
 	#jobsSheetHandle: OverlayHandle | undefined;
 	/** Re-renders the open jobs sheet so output tails and pids stay live. */
 	#jobsSheetTimer: NodeJS.Timeout | undefined;
+	/** Warns when this process holds too much memory or spins CPU while idle. */
+	#resourceWatchdog: ResourceWatchdog | undefined;
 	#planReviewCancel: (() => void) | undefined;
 	/** Serializable review annotations keyed by the resolved plan file path. */
 	#planReviewAnnotationState = new Map<string, PlanReviewAnnotationState>();
@@ -2501,8 +2509,27 @@ export class InteractiveMode implements InteractiveModeContext {
 		// `streamingBehavior: "steer"`, so whichever lands second queues into the
 		// other's turn instead of dying.
 		this.editor.disableSubmit = false;
+		this.#startResourceWatchdog();
 		// Publish native send readiness even when no user input triggers another frame.
 		this.ui.requestRender();
+	}
+
+	#startResourceWatchdog(): void {
+		this.#resourceWatchdog = new ResourceWatchdog({
+			getConfig: () => ({
+				enabled: cfgResourceWatchdogEnabled.get(this.settings),
+				memoryMb: cfgResourceWatchdogMemoryMb.get(this.settings),
+				idleCpuPercent: cfgResourceWatchdogIdleCpuPercent.get(this.settings),
+			}),
+			isIdle: () => {
+				const session = this.session;
+				if (session.isBusyForSnapshot || session.hasPendingAsyncWork()) return false;
+				return (session.getAsyncJobSnapshot()?.running.length ?? 0) === 0;
+			},
+			notify: message => this.showWarning(message),
+		});
+		this.#resourceWatchdog.start();
+		this.#eventBusUnsubscribers.push(this.session.subscribe(() => this.#resourceWatchdog?.noteActivity()));
 	}
 
 	/** Reload the title-generation system prompt override for the provided working
@@ -6708,6 +6735,8 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.#cancelGoalContinuation();
 		clearInterval(this.#jobsSheetTimer);
 		this.#jobsSheetTimer = undefined;
+		this.#resourceWatchdog?.stop();
+		this.#resourceWatchdog = undefined;
 		if (this.#sttController) {
 			this.#sttController.dispose();
 			this.#sttController = undefined;

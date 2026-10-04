@@ -71,6 +71,59 @@ export const cfgPowerSleepPrevention = register({
 	},
 });
 
+export const cfgResourceWatchdogEnabled = register({
+	id: "resourceWatchdog.enabled",
+	type: "boolean",
+	default: true,
+	ui: {
+		tab: "interaction",
+		group: "Power",
+		label: "Resource Watchdog",
+		description:
+			"Warn when this omp process holds too much memory, or keeps burning CPU while idle (a stuck session). Checks once a minute.",
+	},
+});
+
+export const cfgResourceWatchdogMemoryMb = register({
+	id: "resourceWatchdog.memoryMb",
+	type: "number",
+	default: 8192,
+	ui: {
+		tab: "interaction",
+		group: "Power",
+		label: "Memory Warning Threshold",
+		description: "Resident memory, in MB, at which the resource watchdog warns. 0 disables the memory check.",
+		condition: "resourceWatchdogEnabled",
+		options: [
+			{ value: "0", label: "Off" },
+			{ value: "2048", label: "2 GB" },
+			{ value: "4096", label: "4 GB" },
+			{ value: "8192", label: "8 GB" },
+			{ value: "16384", label: "16 GB" },
+		],
+	},
+});
+
+export const cfgResourceWatchdogIdleCpuPercent = register({
+	id: "resourceWatchdog.idleCpuPercent",
+	type: "number",
+	default: 40,
+	ui: {
+		tab: "interaction",
+		group: "Power",
+		label: "Idle CPU Warning Threshold",
+		description:
+			"Percent of one CPU core that, sustained for 3 minutes while nothing is running, makes the resource watchdog warn. 0 disables the CPU check.",
+		condition: "resourceWatchdogEnabled",
+		options: [
+			{ value: "0", label: "Off" },
+			{ value: "25", label: "25%" },
+			{ value: "40", label: "40%" },
+			{ value: "75", label: "75%" },
+		],
+	},
+});
+
 export const cfgPrewalkEnabled = register({
 	id: "prewalk.enabled",
 	type: "boolean",

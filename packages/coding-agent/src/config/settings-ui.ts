@@ -6,6 +6,7 @@ import { type AnySetting, lookup } from "./registry";
 
 import { cfgPlanAutosave, cfgPlanEnabled } from "../plan-mode/settings";
 import {
+	cfgResourceWatchdogEnabled,
 	cfgRetryUsageAwareFallback,
 	cfgDefaultThinkingLevel,
 	normalizeProviderMaxInFlightRequests,
@@ -33,6 +34,7 @@ const CONDITIONS: Record<string, () => boolean> = {
 	usageAwareFallbackEnabled: whenSettings(s => cfgRetryUsageAwareFallback.get(s) === true),
 	planModeEnabled: whenSettings(s => cfgPlanEnabled.get(s)),
 	planAutosaveEnabled: whenSettings(s => cfgPlanEnabled.get(s) && cfgPlanAutosave.get(s)),
+	resourceWatchdogEnabled: whenSettings(s => cfgResourceWatchdogEnabled.get(s) === true),
 };
 
 /** Description suffix telling the panel user that an environment variable is in play. */

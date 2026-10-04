@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- omp now warns when its own process holds too much memory (default 8 GB) or keeps burning CPU for several minutes while idle, so a stuck session no longer slows the machine unnoticed. Configure under Settings → Interaction → Power (`resourceWatchdog.enabled`, `resourceWatchdog.memoryMb`, `resourceWatchdog.idleCpuPercent`).
+
 ### Fixed
 
 - Fixed follow-up hashline edits being rejected as anchored on lines "never displayed" after an earlier edit shifted those lines, when the replacement carries the anchored content; genuinely stale line numbers are still rejected ([#14254](https://github.com/can1357/oh-my-pi/pull/14254) by [@abilliontokens](https://github.com/abilliontokens)).
