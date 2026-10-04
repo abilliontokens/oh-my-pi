@@ -4,7 +4,7 @@
 
 ### Added
 
-- omp now warns when its own process holds too much memory (default 8 GB) or keeps burning CPU for several minutes while idle, so a stuck session no longer slows the machine unnoticed. Configure under Settings → Interaction → Power (`resourceWatchdog.enabled`, `resourceWatchdog.memoryMb`, `resourceWatchdog.idleCpuPercent`).
+- omp now warns when its own process holds too much memory (default 8 GB) or keeps burning CPU for several minutes while idle, so a stuck session no longer slows the machine unnoticed. Configure under Settings → Interaction → Power (`resourceWatchdog.enabled`, `resourceWatchdog.memoryMb`, `resourceWatchdog.idleCpuPercent`) ([#14301](https://github.com/can1357/oh-my-pi/pull/14301) by [@abilliontokens](https://github.com/abilliontokens)).
 
 ### Fixed
 
